@@ -339,7 +339,7 @@ sub restore_common {
 	my $file=shift;
 	my $tempdir=shift;
 
-	my $delta_abs = ($delta eq "-") ? $delta : File::Spec->rel2abs($delta);
+	my $delta_abs = ($delta eq "-") ? "/dev/stdin" : File::Spec->rel2abs($delta);
 
 	doit("tar", "xf", $delta_abs, "-C", $tempdir);
 	if (! -e "$tempdir/type") {
@@ -409,15 +409,6 @@ sub gengz {
 
 	my $tempdir=tempdir();
 
-	if ($delta eq "-") {
-		$delta="$tempdir/in";
-		open (OUT, ">", $delta) || die "$delta: $!";
-		while (<STDIN>) {
-			print OUT $_;
-		}
-		close OUT;
-	}
-
 	restore_common($delta, $file, $tempdir);
 }
 
@@ -474,17 +465,7 @@ sub gendelta {
 
 	my $tempdir=tempdir();
 
-	my $stdout=0;
-	if ($delta eq "-") {
-		$stdout=1;
-		$delta="$tempdir/out";
-	}
-
 	delta_common($gzfile, $delta, $tempdir, 0);
-
-	if ($stdout) {
-		doit("cat", $delta);
-	}
 }
 
 sub flatten {
