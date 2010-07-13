@@ -146,6 +146,7 @@ sub usage {
 	print STDERR "Usage: pristine-gz [-vdk] gendelta file.gz delta\n";
 	print STDERR "       pristine-gz [-vdk] gengz delta file\n";
 	print STDERR "       pristine-gz [-vdk] flatten\n";
+	print STDERR "       pristine-gz [-vdk] unflatten\n";
 }
 
 sub debug {
@@ -333,22 +334,14 @@ sub reproducegz {
 	return $name, $timestamp, "$tempdir/bestdelta", @$bestvariant;
 }
 
-sub gengz {
+sub restore_common {
 	my $delta=shift;
 	my $file=shift;
+	my $tempdir=shift;
 
-	my $tempdir=tempdir();
+	my $delta_abs = ($delta eq "-") ? $delta : File::Spec->rel2abs($delta);
 
-	if ($delta eq "-") {
-		$delta="$tempdir/in";
-		open (OUT, ">", $delta) || die "$delta: $!";
-		while (<STDIN>) {
-			print OUT $_;
-		}
-		close OUT;
-	}
-
-	doit("tar", "xf", File::Spec->rel2abs($delta), "-C", $tempdir);
+	doit("tar", "xf", $delta_abs, "-C", $tempdir);
 	if (! -e "$tempdir/type") {
 		die "failed to gengz delta $delta\n";
 	}
@@ -408,6 +401,31 @@ sub gengz {
 	else {
 		doit_redir("$file", "$file.gz", @zgz);
 	}
+}
+
+sub gengz {
+	my $delta=shift;
+	my $file=shift;
+
+	my $tempdir=tempdir();
+
+	if ($delta eq "-") {
+		$delta="$tempdir/in";
+		open (OUT, ">", $delta) || die "$delta: $!";
+		while (<STDIN>) {
+			print OUT $_;
+		}
+		close OUT;
+	}
+
+	restore_common($delta, $file, $tempdir);
+}
+
+sub unflatten {
+	my $tempdir=tempdir();
+
+	restore_common("-", "$tempdir/uncompressed", $tempdir);
+	doit("cat", "$tempdir/uncompressed.gz");
 }
 
 sub delta_common {
@@ -515,6 +533,13 @@ elsif ($command eq 'flatten') {
 		exit 1;
 	}
 	flatten(@ARGV);
+}
+elsif ($command eq 'unflatten') {
+	if (@ARGV != 0) {
+		usage();
+		exit 1;
+	}
+	unflatten(@ARGV);
 }
 else {
 	print STDERR "Unknown subcommand \"$command\"\n";
