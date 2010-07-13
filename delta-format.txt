@@ -46,3 +46,10 @@ program
 
 	It may also be zgz (the params will include --old-bzip2 in this
 	case.)
+
+The flat format, used by flatten and unflatten, is the gz wrapper
+format without gzip compression of the tar archive.
+It contains an additional entry:
+
+uncompressed
+	The uncompressed data that was stored in the original gz file.
