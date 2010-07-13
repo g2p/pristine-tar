@@ -145,6 +145,7 @@ my $keep=0;
 sub usage {
 	print STDERR "Usage: pristine-gz [-vdk] gendelta file.gz delta\n";
 	print STDERR "       pristine-gz [-vdk] gengz delta file\n";
+	print STDERR "       pristine-gz [-vdk] flatten\n";
 }
 
 sub debug {
@@ -195,7 +196,7 @@ sub readgzip {
 		die("This is not a valid GZip archive.\n");
 	}
 	my @flags = split(//, $flags);
-	
+
 	if ($flags[GZIP_FLAG_FNAME]) {
 		# read a null-terminated string
 		$name .= $chars
@@ -346,7 +347,7 @@ sub gengz {
 		}
 		close OUT;
 	}
-	
+
 	doit("tar", "xf", File::Spec->rel2abs($delta), "-C", $tempdir);
 	if (! -e "$tempdir/type") {
 		die "failed to gengz delta $delta\n";
@@ -367,7 +368,7 @@ sub gengz {
 		close IN;
 	}
 
-	
+
 	open (IN, "$tempdir/params") || die "delta lacks params file ($!)";
 	my $params=<IN>;
 	chomp $params;
@@ -409,23 +410,17 @@ sub gengz {
 	}
 }
 
-sub gendelta {
+sub delta_common {
 	my $gzfile=shift;
 	my $delta=shift;
+	my $tempdir=shift;
+	my $with_uncompressed=shift;
 
-	my $tempdir=tempdir();
-	
-	my $stdout=0;
-	if ($delta eq "-") {
-		$stdout=1;
-		$delta="$tempdir/out";
-	}
-
-	my @files=qw(version type params filename timestamp);
+	my @files = qw(version type params filename timestamp);
 
 	my ($filename, $timestamp, $xdelta, @params)=
 		reproducegz($gzfile, $tempdir, "$tempdir/test");
-	
+
 	open(OUT, ">", "$tempdir/version") || die "$!";
 	print OUT (defined $xdelta ? "3.0" : "2.0")."\n";
 	close OUT;
@@ -445,12 +440,48 @@ sub gendelta {
 		rename($xdelta, "$tempdir/delta") || die "rename: $!";
 		push @files, "delta";
 	}
+	if ($with_uncompressed) {
+		push @files, "uncompressed";
+		doit("tar", "cf", $delta, "-C", $tempdir, @files);
+	}
+	else {
+		doit("tar", "czf", $delta, "-C", $tempdir, @files);
+	}
 
-	doit("tar", "czf", $delta, "-C", $tempdir, @files);
+}
+
+sub gendelta {
+	my $gzfile=shift;
+	my $delta=shift;
+
+	my $tempdir=tempdir();
+
+	my $stdout=0;
+	if ($delta eq "-") {
+		$stdout=1;
+		$delta="$tempdir/out";
+	}
+
+	delta_common($gzfile, $delta, $tempdir, 0);
 
 	if ($stdout) {
 		doit("cat", $delta);
 	}
+}
+
+sub flatten {
+	my $tempdir=tempdir();
+	my $gzfile="$tempdir/in";
+	my $uncompressed="$tempdir/uncompressed";
+
+	open (OUT, ">", $gzfile) || die "$gzfile: $!";
+	while (<STDIN>) {
+		print OUT $_;
+	}
+	close OUT;
+
+	doit_redir($gzfile, $uncompressed, "gzip", "-dc");
+	delta_common($gzfile, "-", $tempdir, 1);
 }
 
 Getopt::Long::Configure("bundling");
@@ -458,17 +489,32 @@ if (! GetOptions(
 	"v|verbose!" => \$verbose,
 	"d|debug!" => \$debug,
 	"k|keep!" => \$keep,
-   ) || @ARGV != 3) {
+	)) {
 	usage();
 	exit 1;
 }
 
 my $command=shift;
 if ($command eq 'gengz') {
+	if (@ARGV != 2) {
+		usage();
+		exit 1;
+	}
 	gengz(@ARGV);
 }
 elsif ($command eq 'gendelta') {
+	if (@ARGV != 2) {
+		usage();
+		exit 1;
+	}
 	gendelta(@ARGV);
+}
+elsif ($command eq 'flatten') {
+	if (@ARGV != 0) {
+		usage();
+		exit 1;
+	}
+	flatten(@ARGV);
 }
 else {
 	print STDERR "Unknown subcommand \"$command\"\n";
