@@ -93,6 +93,9 @@ use File::Temp;
 use Getopt::Long;
 use File::Basename qw/basename/;
 use IPC::Open2;
+use URI::Escape;
+use MIME::Parser;
+use Digest::SHA;
 
 use constant GZIP_DEBUG		 => 1;
 
@@ -334,10 +337,54 @@ sub reproducegz {
 	return $name, $timestamp, "$tempdir/bestdelta", @$bestvariant;
 }
 
+sub check_and_split_params {
+	my $params_s=shift;
+	my @params=split(' ', $params_s);
+	while (@params) {
+		$_=shift @params;
+		next if /^(--gnu|--rsyncable|-[nmM1-9])$/;
+		if (/^(--original-name|--quirk|--osflag)$/) {
+			shift @params;
+			next;
+		}
+		die "paranoia check failed on params field from delta ($params_s)";
+	}
+	@params=split(' ', $params_s);
+	return @params;
+}
+
 sub restore_common {
-	my $delta=shift;
-	my $file=shift;
 	my $tempdir=shift;
+	my $params_s=shift;
+	my $timestamp=shift;
+	my $origname=shift;
+	my $xdelta=shift;
+	my $uncompressed=shift;
+	my $outfile=shift;
+	my @params=check_and_split_params($params_s);
+
+	$origname=~s/^.*\///; # basename isn't strong enough
+	my @zgz=("zgz", @params, "-T", $timestamp);
+	if (! grep { $_ eq "--original-name" } @params) {
+		push @zgz, "-F", "$origname";
+	}
+	push @zgz, "-c";
+
+	if (defined $xdelta) {
+		my $tfile="$tempdir/".basename($origname).".gz";
+		doit_redir($uncompressed, $tfile, @zgz);
+		doit("xdelta", "patch", "--pristine", $xdelta, $tfile, "$outfile");
+	}
+	else {
+		doit_redir($uncompressed, $outfile, @zgz);
+	}
+}
+
+sub gengz {
+	my $delta=shift;
+	my $infile=shift;
+
+	my $tempdir=tempdir();
 
 	my $delta_abs = ($delta eq "-") ? "/dev/stdin" : File::Spec->rel2abs($delta);
 
@@ -361,62 +408,70 @@ sub restore_common {
 		close IN;
 	}
 
-
 	open (IN, "$tempdir/params") || die "delta lacks params file ($!)";
 	my $params=<IN>;
-	chomp $params;
-	my @params=split(' ', $params);
-	while (@params) {
-		$_=shift @params;
-		next if /^(--gnu|--rsyncable|-[nmM1-9])$/;
-		if (/^(--original-name|--quirk|--osflag)$/) {
-			shift @params;
-			next;
-		}
-		die "paranoia check failed on params file from delta ($params)";
-	}
-	@params=split(' ', $params);
 	close IN;
+	chomp $params;
 	open (IN, "$tempdir/filename") || die "delta lacks filename file ($!)";
-	my $filename=<IN>;
-	chomp $filename;
-	$filename=~s/^.*\///; # basename isn't strong enough
+	my $origname=<IN>;
+	chomp $origname;
 	close IN;
 	open (IN, "$tempdir/timestamp") || die "delta lacks timestamp file ($!)";
 	my $timestamp=<IN>;
 	chomp $timestamp;
 	close IN;
 
-	my @zgz=("zgz", @params, "-T", $timestamp);
-	if (! grep { $_ eq "--original-name" } @params) {
-		push @zgz, "-F", "$filename";
-	}
-	push @zgz, "-c";
-
+	my $xdelta;
 	if (-e "$tempdir/delta") {
-		my $tfile="$tempdir/".basename($file).".gz";
-		doit_redir($file, $tfile, @zgz);
-		doit("xdelta", "patch", "--pristine", "$tempdir/delta", $tfile, "$file.gz");
+		$xdelta = "$tempdir/delta";
 	}
-	else {
-		doit_redir("$file", "$file.gz", @zgz);
-	}
-}
 
-sub gengz {
-	my $delta=shift;
-	my $file=shift;
-
-	my $tempdir=tempdir();
-
-	restore_common($delta, $file, $tempdir);
+	restore_common($tempdir, $params, $timestamp, $origname,
+		$xdelta, $infile, "$infile.gz");
 }
 
 sub unflatten {
 	my $tempdir=tempdir();
 
-	restore_common("-", "$tempdir/uncompressed", $tempdir);
-	doit("cat", "$tempdir/uncompressed.gz");
+	#MIME::Tools->debugging(1);
+	my $parser = new MIME::Parser;
+	$parser->output_under($tempdir);
+	$parser->output_prefix("parts");
+	# Doesn't work well; "error near" messages can be a whole tar file.
+	#$parser->ignore_errors(0);
+
+	my $entity = $parser->parse(\*STDIN) or die "parse failed\n";
+	#$entity->dump_skeleton(\*STDERR) if $verbose;
+
+	# XXX weird behaviour if one is undefined
+	my ($mime, $version, $type, $filename_urlenc, $timestamp, $params_s) = (
+		$entity->mime_type,
+		$entity->head->get('Flat-Recode-Version'),
+		$entity->head->get('Type'),
+		$entity->head->get('Filename'),
+		$entity->head->get('Timestamp'),
+		$entity->head->get('Params'),
+		);
+	chomp ($version, $type, $filename_urlenc, $timestamp, $params_s);
+	my $origname=URI::Escape::uri_unescape($filename_urlenc);
+	my ($xdelta, $uncompressed);
+	if ($mime eq 'multipart/flat-recode' and $version eq '3.0') {
+		die('Wrong number of parts') unless $entity->parts == 2;
+		$xdelta = $entity->parts(0)->bodyhandle->path;
+		$uncompressed = $entity->parts(1)->bodyhandle->path;
+	}
+	elsif ($mime eq 'application/flat-recode' and $version eq '2.0') {
+		die('Wrong number of parts') unless $entity->parts == 0;
+		$uncompressed = $entity->bodyhandle->path;
+	}
+	else {
+		die "Unsupported mime or version: $mime, $version";
+	}
+	if ($type ne "gz") {
+		die "delta is for a $type, not a gz\n";
+	}
+	restore_common($tempdir, $params_s, $timestamp, $origname,
+		$xdelta, $uncompressed, "/dev/stdout");
 }
 
 sub delta_common {
@@ -440,7 +495,7 @@ sub delta_common {
 	print OUT "@params\n";
 	close OUT;
 	open(OUT, ">", "$tempdir/filename") || die "$!";
-	print OUT basename($filename)."\n";
+	print OUT $filename."\n";
 	close OUT;
 	open(OUT, ">", "$tempdir/timestamp") || die "$!";
 	print OUT "$timestamp\n";
@@ -462,8 +517,8 @@ sub delta_common {
 	foreach my $file (@files) {
 		utime(0, 0, "$tempdir/$file") || die "utime: $file: $!";
 	}
-	doit(@cmd, "--", @files);
 
+	doit(@cmd, "--", @files);
 }
 
 sub gendelta {
@@ -478,16 +533,72 @@ sub gendelta {
 sub flatten {
 	my $tempdir=tempdir();
 	my $gzfile="$tempdir/in";
-	my $uncompressed="$tempdir/uncompressed";
 
-	open (OUT, ">", $gzfile) || die "$gzfile: $!";
-	while (<STDIN>) {
-		print OUT $_;
+	doit_redir("/dev/stdin", $gzfile, "cat");
+
+	my ($filename, $timestamp, $xdelta, @params)=
+		reproducegz($gzfile, $tempdir, "$tempdir/test");
+	my $filename_urlenc=URI::Escape::uri_escape($filename);
+	my $version=(defined $xdelta ? "3.0" : "2.0");
+	my $type="gz";
+	my $mime;
+	my $boundary;
+
+	if (defined $xdelta) {
+		my $boundary_state=Digest::SHA->new(256);
+		# These fields and parts are user-controled and could be made
+		# to contain the boundary: filename, params, gzfile, xdelta.
+		# Derive the boundary from them to prevent that.
+		# Since the user only controls those values through gzfile,
+		# just hash gzfile.
+		$boundary_state->addfile($gzfile);
+		$boundary=$boundary_state->b64digest;
+		$mime="multipart/flat-recode; boundary=$boundary";
 	}
-	close OUT;
+	else {
+		$mime="application/flat-recode";
+	}
 
-	doit_redir($gzfile, $uncompressed, "gzip", "-dc");
-	delta_common($gzfile, "-", $tempdir, 1);
+	print <<EOS
+Content-Type: $mime
+Flat-Recode-Version: $version
+Type: $type
+Filename: $filename_urlenc
+Timestamp: $timestamp
+Params: @params
+EOS
+	;
+
+	if (defined $xdelta) {
+		print <<EOS
+
+--$boundary
+Content-Type: application/octet-stream
+Content-Transfer-Encoding: binary
+
+EOS
+		;
+		doit("cat", $xdelta);
+		print <<EOS
+
+--$boundary
+Content-Type: application/octet-stream
+Content-Transfer-Encoding: binary
+
+EOS
+		;
+		doit_redir($gzfile, "/dev/stdout", "gzip", "-dc");
+		print "\n--$boundary--\n";
+	}
+	else {
+		print <<EOS
+Content-Transfer-Encoding: binary
+
+EOS
+		;
+
+		doit_redir($gzfile, "/dev/stdout", "gzip", "-dc");
+	}
 }
 
 Getopt::Long::Configure("bundling");
