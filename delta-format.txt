@@ -48,7 +48,9 @@ program
 	case.)
 
 The flat format, used by flatten and unflatten, is the gz wrapper
-format without gzip compression of the tar archive.
+format without gzip compression of the tar archive. Most tar metadata
+is reset so that we don't have spurious variability.
+
 It contains an additional entry:
 
 uncompressed

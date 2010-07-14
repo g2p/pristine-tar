@@ -341,7 +341,7 @@ sub restore_common {
 
 	my $delta_abs = ($delta eq "-") ? "/dev/stdin" : File::Spec->rel2abs($delta);
 
-	doit("tar", "xf", $delta_abs, "-C", $tempdir);
+	doit("tar", "xf", $delta_abs, "-C", $tempdir, "-m");
 	if (! -e "$tempdir/type") {
 		die "failed to gengz delta $delta\n";
 	}
@@ -449,13 +449,20 @@ sub delta_common {
 		rename($xdelta, "$tempdir/delta") || die "rename: $!";
 		push @files, "delta";
 	}
+	my @cmd = ( "tar", "cf", $delta,
+	   "-C", $tempdir, "--format=ustar",
+	   "--numeric-owner", "--owner=0", "--group=0", "--mode=0644",
+	   );
 	if ($with_uncompressed) {
 		push @files, "uncompressed";
-		doit("tar", "cf", $delta, "-C", $tempdir, @files);
 	}
 	else {
-		doit("tar", "czf", $delta, "-C", $tempdir, @files);
+		push @cmd, "-z";
 	}
+	foreach my $file (@files) {
+		utime(0, 0, "$tempdir/$file") || die "utime: $file: $!";
+	}
+	doit(@cmd, "--", @files);
 
 }
 
