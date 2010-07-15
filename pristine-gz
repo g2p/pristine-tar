@@ -455,12 +455,12 @@ sub unflatten {
 	chomp ($version, $type, $filename_urlenc, $timestamp, $params_s);
 	my $origname=URI::Escape::uri_unescape($filename_urlenc);
 	my ($xdelta, $uncompressed);
-	if ($mime eq 'multipart/flat-recode' and $version eq '3.0') {
+	if ($mime eq 'multipart/flat-recode' and $version eq '1.0') {
 		die('Wrong number of parts') unless $entity->parts == 2;
 		$xdelta = $entity->parts(0)->bodyhandle->path;
 		$uncompressed = $entity->parts(1)->bodyhandle->path;
 	}
-	elsif ($mime eq 'application/flat-recode' and $version eq '2.0') {
+	elsif ($mime eq 'application/flat-recode' and $version eq '1.0') {
 		die('Wrong number of parts') unless $entity->parts == 0;
 		$uncompressed = $entity->bodyhandle->path;
 	}
@@ -539,7 +539,7 @@ sub flatten {
 	my ($filename, $timestamp, $xdelta, @params)=
 		reproducegz($gzfile, $tempdir, "$tempdir/test");
 	my $filename_urlenc=URI::Escape::uri_escape($filename);
-	my $version=(defined $xdelta ? "3.0" : "2.0");
+	my $version="1.0";
 	my $type="gz";
 	my $mime;
 	my $boundary;
