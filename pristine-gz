@@ -443,6 +443,10 @@ sub unflatten {
 	my $entity = $parser->parse(\*STDIN) or die "parse failed\n";
 	#$entity->dump_skeleton(\*STDERR) if $verbose;
 
+	if (not $entity->head->count('Flat-Recode-Version')) {
+		die "Invalid format; did not find Flat-Recode-Version header";
+	}
+
 	# XXX weird behaviour if one is undefined
 	my ($mime, $version, $type, $filename_urlenc, $timestamp, $params_s) = (
 		$entity->mime_type,
