@@ -353,11 +353,20 @@ sub check_and_split_params {
 	return @params;
 }
 
+sub sha1_b64_of_file {
+	my $file=shift;
+	my $sha1_state=Digest::SHA->new('1');
+	$sha1_state->addfile($file);
+	my $sha1_b64=$sha1_state->b64digest;
+	return $sha1_b64;
+}
+
 sub restore_common {
 	my $tempdir=shift;
 	my $params_s=shift;
 	my $timestamp=shift;
 	my $origname=shift;
+	my $pristine_sha1_b64=shift;
 	my $xdelta=shift;
 	my $uncompressed=shift;
 	my $outfile=shift;
@@ -377,6 +386,12 @@ sub restore_common {
 	}
 	else {
 		doit_redir($uncompressed, $outfile, @zgz);
+	}
+	if (defined $pristine_sha1_b64) {
+		my $sha1_b64=sha1_b64_of_file($outfile);
+		if ($sha1_b64 ne $pristine_sha1_b64) {
+			die "SHA1 mismatch: $outfile has digest $sha1_b64, should be $pristine_sha1_b64";
+		}
 	}
 }
 
@@ -426,7 +441,7 @@ sub gengz {
 		$xdelta = "$tempdir/delta";
 	}
 
-	restore_common($tempdir, $params, $timestamp, $origname,
+	restore_common($tempdir, $params, $timestamp, $origname, undef,
 		$xdelta, $infile, "$infile.gz");
 }
 
@@ -448,15 +463,20 @@ sub unflatten {
 	}
 
 	# XXX weird behaviour if one is undefined
-	my ($mime, $version, $type, $filename_urlenc, $timestamp, $params_s) = (
+	my ($mime, $version, $pristine_sha1_b64, $type, $filename_urlenc,
+		$timestamp, $params_s)
+	= (
 		$entity->mime_type,
 		$entity->head->get('Flat-Recode-Version'),
+		$entity->head->get('Pristine-SHA1'),
 		$entity->head->get('Type'),
 		$entity->head->get('Filename'),
 		$entity->head->get('Timestamp'),
 		$entity->head->get('Params'),
 		);
-	chomp ($version, $type, $filename_urlenc, $timestamp, $params_s);
+
+	chomp ($version, $pristine_sha1_b64, $type,
+		$filename_urlenc, $timestamp, $params_s);
 	my $origname=URI::Escape::uri_unescape($filename_urlenc);
 	my ($xdelta, $uncompressed);
 	if ($mime eq 'multipart/flat-recode' and $version eq '1.0') {
@@ -474,8 +494,12 @@ sub unflatten {
 	if ($type ne "gz") {
 		die "delta is for a $type, not a gz\n";
 	}
+	if (not defined $pristine_sha1_b64) {
+		die "A hash is mandatory for the flat format";
+	}
 	restore_common($tempdir, $params_s, $timestamp, $origname,
-		$xdelta, $uncompressed, "/dev/stdout");
+		$pristine_sha1_b64, $xdelta, $uncompressed, "$tempdir/out");
+	doit('cat', "$tempdir/out");
 }
 
 sub delta_common {
@@ -547,16 +571,18 @@ sub flatten {
 	my $type="gz";
 	my $mime;
 	my $boundary;
+	# SHA1 to match our use in Git
+	my $sha1_b64;
+
+	$sha1_b64=sha1_b64_of_file($gzfile);
 
 	if (defined $xdelta) {
-		my $boundary_state=Digest::SHA->new(256);
 		# These fields and parts are user-controled and could be made
 		# to contain the boundary: filename, params, gzfile, xdelta.
 		# Derive the boundary from them to prevent that.
 		# Since the user only controls those values through gzfile,
 		# just hash gzfile.
-		$boundary_state->addfile($gzfile);
-		$boundary=$boundary_state->b64digest;
+		$boundary=$sha1_b64;
 		$mime="multipart/flat-recode; boundary=$boundary";
 	}
 	else {
@@ -566,6 +592,7 @@ sub flatten {
 	print <<EOS
 Content-Type: $mime
 Flat-Recode-Version: $version
+Pristine-SHA1: $sha1_b64
 Type: $type
 Filename: $filename_urlenc
 Timestamp: $timestamp
