@@ -618,7 +618,7 @@ Content-Transfer-Encoding: binary
 
 EOS
 		;
-		doit_redir($gzfile, "/dev/stdout", "gzip", "-dc");
+		doit("cat", "$tempdir/test");
 		print "\n--$boundary--\n";
 	}
 	else {
@@ -628,7 +628,7 @@ Content-Transfer-Encoding: binary
 EOS
 		;
 
-		doit_redir($gzfile, "/dev/stdout", "gzip", "-dc");
+		doit("cat", "$tempdir/test");
 	}
 }
 
