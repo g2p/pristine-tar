@@ -445,6 +445,13 @@ sub gengz {
 		$xdelta, $infile, "$infile.gz");
 }
 
+sub header_or_die {
+	my $entity=shift;
+	my $tag=shift;
+
+	return $entity->head->get($tag) // die("Missing $tag header");
+}
+
 sub unflatten {
 	my $tempdir=tempdir();
 
@@ -462,17 +469,16 @@ sub unflatten {
 		die "Invalid format; did not find Flat-Recode-Version header";
 	}
 
-	# XXX weird behaviour if one is undefined
 	my ($mime, $version, $pristine_sha1_b64, $type, $filename_urlenc,
 		$timestamp, $params_s)
 	= (
-		$entity->mime_type,
-		$entity->head->get('Flat-Recode-Version'),
-		$entity->head->get('Pristine-SHA1'),
-		$entity->head->get('Type'),
-		$entity->head->get('Filename'),
-		$entity->head->get('Timestamp'),
-		$entity->head->get('Params'),
+		$entity->mime_type // die('Content-Type'),
+		header_or_die($entity, 'Flat-Recode-Version'),
+		header_or_die($entity, 'Pristine-SHA1'),
+		header_or_die($entity, 'Type'),
+		header_or_die($entity, 'Filename'),
+		header_or_die($entity, 'Timestamp'),
+		header_or_die($entity, 'Params'),
 		);
 
 	chomp ($version, $pristine_sha1_b64, $type,
