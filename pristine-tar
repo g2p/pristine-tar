@@ -25,8 +25,8 @@ the I<upstream> branch, thus allowing Debian packages to be built entirely
 using sources in version control, without the need to keep copies of
 upstream tarballs.
 
-pristine-tar supports compressed tarballs, calling out to pristine-gz(1)
-and pristine-bz2(1) to produce the pristine gzip and bzip2 files.
+pristine-tar supports compressed tarballs, calling out to pristine-comp(1)
+to produce the pristine gzip and bzip2 files.
 
 =head1 COMMANDS
 
@@ -397,21 +397,13 @@ sub gentar {
 	if (-e "$tempdir/wrapper") {
 		my $type=`tar xOzf $tempdir/wrapper type`;
 		chomp $type;
-		if ($type eq 'gz') {
-			doit("pristine-gz", 
+		if ($type eq 'gz' or $type eq 'bz2') {
+			doit("pristine-comp", "-c", $type,
 				($verbose ? "-v" : "--no-verbose"),
 				($debug ? "-d" : "--no-debug"),
 				($keep ? "-k" : "--no-keep"),
-				"gengz", "$tempdir/wrapper", $out);
-			doit("mv", "-f", $out.".gz", $tarball);
-		}
-		elsif ($type eq 'bz2') {
-			doit("pristine-bz2",
-				($verbose ? "-v" : "--no-verbose"),
-				($debug ? "-d" : "--no-debug"),
-				($keep ? "-k" : "--no-keep"),
-				"genbz2", "$tempdir/wrapper", $out);
-			doit("mv", "-f", $out.".bz2", $tarball);
+				"gencomp", "$tempdir/wrapper", $out);
+			doit("mv", "-f", "$out.$type", $tarball);
 		}
 		else {
 			error "unknown wrapper file type: $type";
@@ -483,7 +475,7 @@ sub gendelta {
 	
 	# Generate a wrapper file to recreate the compressed file.
 	if (defined $compression) {
-		doit("pristine-$compression",
+		doit("pristine-comp", "-c", $compression,
 			($verbose ? "-v" : "--no-verbose"),
 			($debug ? "-d" : "--no-debug"),
 			($keep ? "-k" : "--no-keep"),
