@@ -6,15 +6,13 @@ pristine-comp - regenerate pristine compressed files
 
 =head1 SYNOPSIS
 
-B<pristine-comp> [-vdk] gendelta -c gz I<file.gz> I<delta>
+B<pristine-comp> [-vdkt] gendelta I<file.(gz|bz2)> I<delta>
 
-B<pristine-comp> [-vdk] gendelta -c bz2 I<file.bz2> I<delta>
+B<pristine-comp> [-vdk]  gencomp I<delta> I<file>
 
-B<pristine-comp> [-vdk] gencomp I<delta> I<file>
+B<pristine-comp> [-vdkt] flatten < I<file.(gz|bz2)> > I<file.flat>
 
-B<pristine-comp> [-vdk] gengz I<delta> I<file>
-
-B<pristine-comp> [-vdk] genbz2 I<delta> I<file>
+B<pristine-comp> [-vdk]  unflatten < I<file.flat> > I<file.(gz|bz2)>
 
 =head1 DESCRIPTION
 
@@ -196,12 +194,12 @@ my $compression=undef;
 
 sub usage {
 	print STDERR "Usage: pristine-comp [-vdkt] gendelta file.(gz|bz2) delta\n";
-	print STDERR "       pristine-comp [-vdkt] gencomp delta file\n";
+	print STDERR "       pristine-comp [-vdk]  gencomp delta file\n";
 	print STDERR "       pristine-comp [-vdkt] flatten\n";
-	print STDERR "       pristine-comp [-vdkt] unflatten\n";
+	print STDERR "       pristine-comp [-vdk]  unflatten\n";
 	print STDERR "Compatiblity:\n";
-	print STDERR "       pristine-comp [-vdkt] genbz2 delta file\n";
-	print STDERR "       pristine-comp [-vdkt] gengz delta file\n";
+	print STDERR "       pristine-comp [-vdk]  genbz2 delta file\n";
+	print STDERR "       pristine-comp [-vdk]  gengz delta file\n";
 }
 
 sub debug {
