@@ -608,8 +608,15 @@ sub reproduce_comp {
 		require_supported_compression();
 	}
 
-	# XXX Can't use an array, undef elements shift things.
-	return ($filename, $timestamp, $xdelta, $program, @params);
+	# Returning arrays leads to weirdness
+	return (
+		'filename' => $filename,
+		'timestamp' => $timestamp,
+		'xdelta' => $xdelta,
+		'program' => $program,
+		# XXX Only params is weird now.
+		'params' => @params,
+	);
 }
 
 sub restore_common {
@@ -782,8 +789,16 @@ sub delta_common {
 
 	my @files = ();
 
-	my ($filename, $timestamp, $xdelta, $program, @params) = \
-			reproduce_comp($compfile, $tempdir, "$tempdir/uncompressed");
+	my ($filename, $timestamp, $xdelta, $program, @params);
+	my %h = reproduce_comp($compfile, $tempdir, "$tempdir/uncompressed");
+	($filename, $timestamp, $xdelta, $program, @params) = (
+		$h{'filename'},
+		$h{'timestamp'},
+		$h{'xdelta'},
+		$h{'program'},
+		$h{'params'},
+		);
+	print STDERR Dumper(\%h);
 	print STDERR Dumper([$filename, $timestamp, $xdelta, $program, \@params]);
 
 	my $add_metadata = sub {
@@ -845,8 +860,17 @@ sub flatten {
 
 	doit_redir("/dev/stdin", $compfile, "cat");
 
-	my ($filename, $timestamp, $xdelta, $program, @params) = \
-			reproduce_comp($compfile, $tempdir, "$tempdir/uncompressed");
+	my ($filename, $timestamp, $xdelta, $program, @params);
+	my %h = reproduce_comp($compfile, $tempdir, "$tempdir/uncompressed");
+	($filename, $timestamp, $xdelta, $program, @params) = (
+		$h{'filename'},
+		$h{'timestamp'},
+		$h{'xdelta'},
+		$h{'program'},
+		$h{'params'},
+		);
+	print STDERR Dumper(\%h);
+	print STDERR Dumper([$filename, $timestamp, $xdelta, $program, \@params]);
 
 	my $filename_urlenc=URI::Escape::uri_escape($filename);
 	my $version="1.0";
