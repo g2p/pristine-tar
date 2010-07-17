@@ -134,6 +134,7 @@ use IPC::Open2;
 use URI::Escape;
 use MIME::Parser;
 use Digest::SHA;
+use POSIX qw(:sys_wait_h); # WEXITSTATUS
 
 # magic identification
 use constant BZIP2_ID1		 => 0x42;
@@ -226,6 +227,8 @@ sub doit_redir {
 	open OUTFILE, ">", $out or die("Could not open '$out' for reading: $!\n");
 	my $pid = open2(">&OUTFILE", "<&INFILE", @args);
 	waitpid $pid, 0;
+	my $exit_status = WEXITSTATUS($?);
+	die "Command @args failed with exit status $exit_status" if $exit_status;
 }
 
 sub require_supported_compression {
