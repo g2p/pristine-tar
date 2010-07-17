@@ -608,14 +608,13 @@ sub reproduce_comp {
 		require_supported_compression();
 	}
 
-	# Returning arrays leads to weirdness
+	# Returning arrays is tricky
 	return (
 		'filename' => $filename,
 		'timestamp' => $timestamp,
 		'xdelta' => $xdelta,
 		'program' => $program,
-		# XXX Only params is weird now.
-		'params' => @params,
+		'params' => \@params,
 	);
 }
 
@@ -780,7 +779,6 @@ sub unflatten {
 	doit('cat', "$tempdir/out");
 }
 
-use Data::Dumper;
 sub delta_common {
 	my $compfile=shift;
 	my $delta=shift;
@@ -789,17 +787,16 @@ sub delta_common {
 
 	my @files = ();
 
-	my ($filename, $timestamp, $xdelta, $program, @params);
+	my ($filename, $timestamp, $xdelta, $program, $params);
 	my %h = reproduce_comp($compfile, $tempdir, "$tempdir/uncompressed");
-	($filename, $timestamp, $xdelta, $program, @params) = (
+	($filename, $timestamp, $xdelta, $program, $params) = (
 		$h{'filename'},
 		$h{'timestamp'},
 		$h{'xdelta'},
 		$h{'program'},
 		$h{'params'},
 		);
-	print STDERR Dumper(\%h);
-	print STDERR Dumper([$filename, $timestamp, $xdelta, $program, \@params]);
+	my $params_s = join(' ', @$params);
 
 	my $add_metadata = sub {
 		my $key=shift;
@@ -812,7 +809,7 @@ sub delta_common {
 
 	$add_metadata->('version', ((defined $xdelta) ? "3.0" : "2.0"));
 	$add_metadata->('type', $compression);
-	$add_metadata->('params', "@params");
+	$add_metadata->('params', $params_s);
 	if ($compression eq 'gz') {
 		$add_metadata->('filename', $filename);
 		$add_metadata->('timestamp', $timestamp);
@@ -822,9 +819,6 @@ sub delta_common {
 	}
 
 	if (defined $xdelta) {
-		print STDERR Dumper(\$xdelta);
-		print STDERR 0+defined(&xdelta);
-		print STDERR "\n";
 		rename($xdelta, "$tempdir/delta") || die "rename: $!";
 		push @files, "delta";
 	}
@@ -860,17 +854,16 @@ sub flatten {
 
 	doit_redir("/dev/stdin", $compfile, "cat");
 
-	my ($filename, $timestamp, $xdelta, $program, @params);
+	my ($filename, $timestamp, $xdelta, $program, $params);
 	my %h = reproduce_comp($compfile, $tempdir, "$tempdir/uncompressed");
-	($filename, $timestamp, $xdelta, $program, @params) = (
+	($filename, $timestamp, $xdelta, $program, $params) = (
 		$h{'filename'},
 		$h{'timestamp'},
 		$h{'xdelta'},
 		$h{'program'},
 		$h{'params'},
 		);
-	print STDERR Dumper(\%h);
-	print STDERR Dumper([$filename, $timestamp, $xdelta, $program, \@params]);
+	my $params_s = join(' ', @$params);
 
 	my $filename_urlenc=URI::Escape::uri_escape($filename);
 	my $version="1.0";
@@ -906,13 +899,13 @@ EOS
 		print <<EOS;
 Filename: $filename_urlenc
 Timestamp: $timestamp
-Params: @params
+Params: $params_s
 EOS
 	}
 	elsif ($compression eq 'bz2') {
 		print <<EOS;
 Program: $program
-Params: @params
+Params: $params_s
 EOS
 	}
 
