@@ -9,7 +9,7 @@ Url: http://kitenet.net/~joey/code/pristine-tar/
 Source0: http://ftp.debian.org/debian/pool/main/p/pristine-tar/%{name}_%{version}.tar.gz
 BuildRoot: %{_tmppath}/%{name}-%{version}-%{release}-root-%(%{__id_u} -n)
 
-Requires: git, xdelta
+Requires: git, xdelta, perl(MIME::Parser)
 
 %description
 pristine-tar can regenerate a pristine upstream tarball using only a
