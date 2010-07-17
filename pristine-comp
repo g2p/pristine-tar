@@ -219,16 +219,27 @@ sub doit {
 	}
 }
 
-sub doit_redir {
+sub doit_redir_opts {
 	no warnings 'once';
-	my ($in, $out, @args) = @_;
+	my ($in, $out, $opts, @args) = @_;
 	vprint(@args, "<", $in, ">", $out);
 	open INFILE, "<", $in or die("Could not open '$in' for reading: $!\n");
 	open OUTFILE, ">", $out or die("Could not open '$out' for reading: $!\n");
 	my $pid = open2(">&OUTFILE", "<&INFILE", @args);
 	waitpid $pid, 0;
 	my $exit_status = WEXITSTATUS($?);
-	die "Command @args failed with exit status $exit_status" if $exit_status;
+	my @ok_status = (0,);
+	if (defined $opts->{ok_status}) {
+		@ok_status =  @{$opts->{ok_status}};
+	}
+	if (not grep($_ == $exit_status, @ok_status)) {
+		die "Command @args failed with exit status $exit_status";
+	}
+}
+
+sub doit_redir {
+	my ($in, $out, @args) = @_;
+	doit_redir_opts($in, $out, {}, @args);
 }
 
 sub require_supported_compression {
@@ -250,7 +261,7 @@ sub comparefiles {
 		die("Failed to execute cmp: $!\n");
 	}
 
-	return $? >> 8;
+	return WEXITSTATUS($?);
 }
 
 sub detect_compression {
@@ -437,7 +448,8 @@ sub predictgzipargs {
 sub reproducegz {
 	my ($orig, $tempdir, $tmpin) = @_;
 	my $tempout="$tempdir/test.gz"; # Don't rename, appears in xdelta
-	doit_redir($orig, $tmpin, "gzip", "-dc");
+	# Exit 2 is a warning status, eg, extra data at the end
+	doit_redir_opts($orig, $tmpin, { ok_status => [0, 2], }, "gzip", "-dc");
 
 	# read fields from gzip headers
 	my ($flags, $timestamp, $level, $os, $name) = readgzip($orig);
