@@ -1,7 +1,6 @@
 build: zgz/zgz pristine-tar.spec
 	pod2man -c pristine-tar pristine-tar > pristine-tar.1
-	pod2man -c pristine-gz  pristine-gz  > pristine-gz.1
-	pod2man -c pristine-bz2 pristine-bz2 > pristine-bz2.1
+	pod2man -c pristine-comp  pristine-comp > pristine-comp.1
 	pod2man -c zgz zgz.pod > zgz.1
 
 ZGZ_SOURCES = zgz/zgz.c zgz/bits.c zgz/deflate.c zgz/gzip.c zgz/trees.c zgz/util.c \
@@ -15,6 +14,8 @@ install:
 	install pristine-tar pristine-comp pristine-gz pristine-bz2 zgz/zgz \
 		$(DESTDIR)/usr/bin
 	install -m 0644 *.1 $(DESTDIR)/usr/share/man/man1
+	ln -Tsf pristine-comp.1 $(DESTDIR)/usr/share/man/man1/pristine-gz.1
+	ln -Tsf pristine-comp.1 $(DESTDIR)/usr/share/man/man1/pristine-bz2.1
 
 clean: pristine-tar.spec
 	rm -f zgz/zgz *.1
