@@ -646,7 +646,7 @@ sub gencomp {
 
 	my $tempdir=tempdir();
 	my $delta_abs = ($delta eq "-") ? "/dev/stdin" : File::Spec->rel2abs($delta);
-	my ($xdelta, @zgz);
+	my ($xdelta, $sha1_b64, @zgz);
 
 	doit("tar", "xf", $delta_abs, "-C", $tempdir, "-m");
 	if (! -e "$tempdir/type") {
@@ -674,6 +674,9 @@ sub gencomp {
 	$compression=$type;
 	require_supported_compression();
 
+	if (-e "$tempdir/sha1sum") {
+		$sha1_b64=$get_metadata->('sha1sum');
+	}
 	my $params=$get_metadata->('params');
 
 	if ($compression eq 'gz') {
@@ -691,7 +694,7 @@ sub gencomp {
 		@zgz = restore_cmd_bz2($params, $program);
 	}
 
-	restore_common($tempdir, undef,
+	restore_common($tempdir, $sha1_b64,
 		$xdelta, $infile, "$infile.$compression", @zgz);
 }
 
@@ -794,6 +797,7 @@ sub delta_common {
 		$h{'params'},
 		);
 	my $params_s = join(' ', @$params);
+	my $sha1_b64=sha1_b64_of_file($compfile);
 
 	my $add_metadata = sub {
 		my $key=shift;
@@ -806,6 +810,7 @@ sub delta_common {
 
 	$add_metadata->('version', ((defined $xdelta) ? "3.0" : "2.0"));
 	$add_metadata->('type', $compression);
+	$add_metadata->('sha1sum', $sha1_b64);
 	$add_metadata->('params', $params_s);
 	if ($compression eq 'gz') {
 		$add_metadata->('filename', $filename);
