@@ -946,7 +946,7 @@ if (! GetOptions(
 	"k|keep!" => \$keep,
 	"t|try!" => \$try,
 	"c|compression=s" => \$compression,
-	))
+	) || @ARGV == 0)
 {
 	usage();
 	exit 1;
