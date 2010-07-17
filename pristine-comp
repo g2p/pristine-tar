@@ -194,14 +194,11 @@ my $try=0;
 my $compression=undef;
 
 sub usage {
-	print STDERR "Usage: pristine-comp [-vdkt] gendelta -c gz file.gz delta\n";
-	print STDERR "       pristine-comp [-vdkt] gendelta -c bz2 file.bz2 delta\n";
+	print STDERR "Usage: pristine-comp [-vdkt] gendelta file.(gz|bz2) delta\n";
 	print STDERR "       pristine-comp [-vdkt] gencomp delta file\n";
 	print STDERR "       pristine-comp [-vdkt] flatten\n";
 	print STDERR "       pristine-comp [-vdkt] unflatten\n";
 	print STDERR "Compatiblity:\n";
-	print STDERR "       pristine-gz [-vdkt] gendelta file.gz delta\n";
-	print STDERR "       pristine-bz2 [-vdkt] gendelta file.bz2 delta\n";
 	print STDERR "       pristine-comp [-vdkt] genbz2 delta file\n";
 	print STDERR "       pristine-comp [-vdkt] gengz delta file\n";
 }
@@ -251,6 +248,29 @@ sub comparefiles {
 	}
 
 	return $? >> 8;
+}
+
+sub detect_compression {
+	# copied from pristine-tar
+	my $compfile=shift;
+
+	open (IN, "<", $compfile) || die "Cannot read $compfile: $!\n";
+	my ($chars, $id1, $id2, $method);
+	if (read(IN, $chars, 10) == 10 &&
+		(($id1, $id2, $method) = unpack("CCC", $chars)) &&
+			$id1 == GZIP_ID1 && $id2 == GZIP_ID2 &&
+			$method == GZIP_METHOD_DEFLATE) {
+		return 'gz';
+	}
+	else {
+		seek(IN, 0, 0) || die "Cannot seek within $compfile: $!";
+		if (read(IN, $chars, 3) == 3 &&
+			(($id1, $id2, $method) = unpack("CCC", $chars)) &&
+				$id1 == BZIP2_ID1 && $id2 == BZIP2_ID2 &&
+				$method == BZIP2_METHOD_HUFFMAN) {
+			return 'bz2';
+		}
+	}
 }
 
 sub readbzip2 {
@@ -563,6 +583,38 @@ sub restore_cmd_gz {
 	return @zgz;
 }
 
+sub reproduce_comp {
+	my ($compfile, $tempdir, $tmpin) = @_;
+	my ($filename, $timestamp, $xdelta, $program, @params);
+
+	$compression //= detect_compression($compfile);
+
+	if (not defined $compression) {
+		die "Couldn't detect compression. Use the -c option.";
+	}
+	elsif ($compression eq 'gz') {
+		($filename, $timestamp, $xdelta, @params)=
+			reproducegz($compfile, $tempdir, "$tempdir/uncompressed");
+	}
+	elsif ($compression eq 'bz2') {
+		($program, @params)=
+			reproducebzip2($compfile, $tempdir, "$tempdir/uncompressed");
+	}
+	else {
+		# In case we detect types we don't support.
+		require_supported_compression();
+	}
+
+	# Returning arrays is tricky
+	return (
+		'filename' => $filename,
+		'timestamp' => $timestamp,
+		'xdelta' => $xdelta,
+		'program' => $program,
+		'params' => \@params,
+	);
+}
+
 sub restore_common {
 	my $tempdir=shift;
 	my $pristine_sha1_b64=shift;
@@ -731,7 +783,17 @@ sub delta_common {
 	my $with_uncompressed=shift;
 
 	my @files = ();
-	my ($filename, $timestamp, $xdelta, $program, @params);
+
+	my ($filename, $timestamp, $xdelta, $program, $params);
+	my %h = reproduce_comp($compfile, $tempdir, "$tempdir/uncompressed");
+	($filename, $timestamp, $xdelta, $program, $params) = (
+		$h{'filename'},
+		$h{'timestamp'},
+		$h{'xdelta'},
+		$h{'program'},
+		$h{'params'},
+		);
+	my $params_s = join(' ', @$params);
 
 	my $add_metadata = sub {
 		my $key=shift;
@@ -742,22 +804,9 @@ sub delta_common {
 		close OUT;
 	};
 
-	if ($compression eq 'gz') {
-		($filename, $timestamp, $xdelta, @params)=
-			reproducegz($compfile, $tempdir, "$tempdir/uncompressed");
-	}
-	elsif ($compression eq 'bz2') {
-		($program, @params)=
-			reproducebzip2($compfile, $tempdir, "$tempdir/uncompressed");
-	}
-	else {
-		# We enforced the values at the getopt stage
-		die "Internal inconsistency: $compression";
-	}
-
-	$add_metadata->('version', (defined $xdelta ? "3.0" : "2.0"));
+	$add_metadata->('version', ((defined $xdelta) ? "3.0" : "2.0"));
 	$add_metadata->('type', $compression);
-	$add_metadata->('params', "@params");
+	$add_metadata->('params', $params_s);
 	if ($compression eq 'gz') {
 		$add_metadata->('filename', $filename);
 		$add_metadata->('timestamp', $timestamp);
@@ -799,22 +848,19 @@ sub gendelta {
 sub flatten {
 	my $tempdir=tempdir();
 	my $compfile="$tempdir/in"; # Don't rename, embedded in xdelta
-	my ($filename, $timestamp, $xdelta, $program, @params);
 
 	doit_redir("/dev/stdin", $compfile, "cat");
 
-	if ($compression eq 'gz') {
-		($filename, $timestamp, $xdelta, @params)=
-			reproducegz($compfile, $tempdir, "$tempdir/uncompressed");
-	}
-	elsif ($compression eq 'bz2') {
-		($program, @params)=
-			reproducebzip2($compfile, $tempdir, "$tempdir/uncompressed");
-	}
-	else {
-		# We enforced the values at the getopt stage
-		die "Internal inconsistency: $compression";
-	}
+	my ($filename, $timestamp, $xdelta, $program, $params);
+	my %h = reproduce_comp($compfile, $tempdir, "$tempdir/uncompressed");
+	($filename, $timestamp, $xdelta, $program, $params) = (
+		$h{'filename'},
+		$h{'timestamp'},
+		$h{'xdelta'},
+		$h{'program'},
+		$h{'params'},
+		);
+	my $params_s = join(' ', @$params);
 
 	my $filename_urlenc=URI::Escape::uri_escape($filename);
 	my $version="1.0";
@@ -850,13 +896,13 @@ EOS
 		print <<EOS;
 Filename: $filename_urlenc
 Timestamp: $timestamp
-Params: @params
+Params: $params_s
 EOS
 	}
 	elsif ($compression eq 'bz2') {
 		print <<EOS;
 Program: $program
-Params: @params
+Params: $params_s
 EOS
 	}
 
@@ -949,18 +995,12 @@ elsif ($command eq 'gendelta') {
 		usage();
 		exit 1;
 	}
-	if (not defined $compression) {
-		die "Please specify the --compression you want a delta for (gz or bz2).";
-	}
 	gendelta(@ARGV);
 }
 elsif ($command eq 'flatten') {
 	if (@ARGV != 0) {
 		usage();
 		exit 1;
-	}
-	if (not defined $compression) {
-		die "Please specify the --compression you want to flatten for (gz or bz2).";
 	}
 	flatten(@ARGV);
 }
