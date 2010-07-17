@@ -12,7 +12,8 @@ zgz/zgz: $(ZGZ_SOURCES) zgz/gzip.h
 install:
 	install -d $(DESTDIR)/usr/bin
 	install -d $(DESTDIR)/usr/share/man/man1
-	install pristine-tar pristine-gz pristine-bz2 zgz/zgz $(DESTDIR)/usr/bin
+	install pristine-tar pristine-comp pristine-gz pristine-bz2 zgz/zgz \
+		$(DESTDIR)/usr/bin
 	install -m 0644 *.1 $(DESTDIR)/usr/share/man/man1
 
 clean: pristine-tar.spec
