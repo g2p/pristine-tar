@@ -368,10 +368,45 @@ sub bz2_pipe_command {
 }
 
 sub test_bz2_variant {
-	my ($orig, $tmpin, $tempout, $program, @args) = @_;
+	no warnings 'once';
 
-	doit_redir($tmpin, $tempout, bz2_pipe_command($program, @args));
-	return !comparefiles($orig, $tempout);
+	my ($orig, $tmpin, $tempout, $program, @args) = @_;
+	my @cmd = bz2_pipe_command($program, @args);
+	my $cmp_exit_status;
+
+	vprint(@cmd, "<", $tmpin, "|cmp -s -- $orig");
+	open(INFILE, "<", $tmpin) or die(
+		"Could not open '$tmpin' for reading: $!\n");
+	my $cmp_pid = open CMP, "|-", "cmp -s -- $orig" or die(
+		"Could not spawn cmp: $!\n");
+	my $bz2_pid = open2(">&CMP", "<&INFILE", @cmd);
+
+	my $dead_pid = wait;
+	if ($dead_pid == $cmp_pid) {
+		$cmp_exit_status = WEXITSTATUS($?);
+		#print STDERR "cmp exit status $cmp_exit_status raw $?\n";
+		close CMP;
+		# Don't waste time compressing the rest, would get a SIGPIPE anyway
+		kill 'KILL', $bz2_pid;
+		# Don't leave a zombie
+		waitpid $bz2_pid, 0;
+		#print STDERR "$program exit status (raw, after cmp) $?\n";
+	}
+	elsif ($dead_pid == $bz2_pid) {
+		#print STDERR "$program exit status (raw, before cmp) $?\n";
+		# Implicit waitpid
+		close CMP;
+		$cmp_exit_status = WEXITSTATUS($?);
+		#print STDERR "cmp exit status $cmp_exit_status raw $?\n";
+	}
+	elsif ($dead_pid < 0) {
+		die("Error waiting for child processes: $!");
+	}
+	else {
+		die "Unexpected child process event: $dead_pid, $?";
+	}
+
+	return $cmp_exit_status == 0;
 }
 
 sub reproducebzip2 {
