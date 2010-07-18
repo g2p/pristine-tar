@@ -87,10 +87,10 @@ To have git store compressed files as flat files, run:
 
 Then, in a git repository, add the following entries to gitattributes(5):
 
-	echo '*.gz   filter=pristine-comp' >> .gitattributes
-	echo '*.bz2  filter=pristine-comp' >> .gitattributes
-	echo '*.tgz  filter=pristine-comp' >> .gitattributes
-	echo '*.tbz2 filter=pristine-comp' >> .gitattributes
+	echo '*.gz   filter=pristine-comp -text' >> .gitattributes
+	echo '*.bz2  filter=pristine-comp -text' >> .gitattributes
+	echo '*.tgz  filter=pristine-comp -text' >> .gitattributes
+	echo '*.tbz2 filter=pristine-comp -text' >> .gitattributes
 
 =head1 OPTIONS
 
