@@ -283,17 +283,6 @@ sub tempdir {
 		TMPDIR => 1, CLEANUP => !$keep);
 }
 
-sub comparefiles {
-	my ($old, $new) = (shift, shift);
-	system('cmp', '-s', $old, $new);
-
-	if ($? == -1 || $? & 127) {
-		die("Failed to execute cmp: $!\n");
-	}
-
-	return WEXITSTATUS($?);
-}
-
 sub detect_compression {
 	# copied from pristine-tar
 	my $compfile=shift;
@@ -367,11 +356,11 @@ sub bz2_pipe_command {
 	}
 }
 
-sub test_bz2_variant {
+sub test_compression {
 	no warnings 'once';
 
-	my ($orig, $tmpin, $tempout, $program, @args) = @_;
-	my @cmd = bz2_pipe_command($program, @args);
+	my ($orig, $tmpin, $program, @args) = @_;
+	my @cmd = ($program, @args);
 	my $cmp_exit_status;
 
 	vprint(@cmd, "<", $tmpin, "|cmp -s -- $orig");
@@ -409,10 +398,16 @@ sub test_bz2_variant {
 	return $cmp_exit_status == 0;
 }
 
+sub test_bz2_variant {
+	my ($orig, $tmpin, $program, @args) = @_;
+	my @cmd = bz2_pipe_command($program, @args);
+	return test_compression($orig, $tmpin, @cmd);
+}
+
 sub reproducebzip2 {
 	my ($orig, $tempdir, $tmpin) = (shift, shift, shift);
 
-	my $tempout="$tempdir/test.bz2";
+	#my $tempout="$tempdir/test.bz2"; # xdelta only
 	doit_redir($orig, $tmpin, "bzip2", "-dc");
 
 	# read fields from bzip2 headers
@@ -424,12 +419,12 @@ sub reproducebzip2 {
 		# header information
 		my @args = predictbzip2args($level, $program);
 
-		test_bz2_variant($orig, $tmpin, $tempout, $program, @args)
+		test_bz2_variant($orig, $tmpin, $program, @args)
 			&& return $program, @args;
 	}
 
 	# 7z has a weird syntax, not supported yet, as not seen in the wild
-	#test_bz2_variant($orig, $tmpin, $tempout, "7z", "-mx$level") \
+	#test_bz2_variant($orig, $tmpin, "7z", "-mx$level") \
 	# && return "7z", "-mx$level";
 
 	# pbzip2 -b option affects output, but cannot be detected from a
@@ -449,7 +444,7 @@ sub reproducebzip2 {
 			next if $tried{$try};
 			$tried{$try}=1;
 			print STDERR "\r\tblock size: $try   ";
-			test_bz2_variant($orig, $tmpin, $tempout, "pbzip2", "-b${try}", @args) &&
+			test_bz2_variant($orig, $tmpin, "pbzip2", "-b${try}", @args) &&
 				return "pbzip2", "-b${try}", @args;
 		}
 		print STDERR "\n";
@@ -568,29 +563,32 @@ sub reproducegz {
 	my ($bestvariant, $bestsize);
 
 	foreach my $variant (@try) {
-		doit_redir($tmpin, $tempout, 'zgz', @$variant, @extraargs, '-c');
-		if (!comparefiles($orig, $tempout)) {
-			# success
+		if (test_compression($orig, $tmpin,
+				'zgz', @$variant, @extraargs, '-c')) {
 			return $name, $timestamp, undef, @$variant;
 		}
-		else {
-			# generate a binary delta and see if this is the
-			# best variant so far
-			my $ret=system("xdelta delta -0 --pristine $tempout $orig $tempdir/tmpdelta 2>/dev/null") >> 8;
-			# xdelta exits 1 on success
-			if ($ret == 1) {
-				my $size=(stat("$tempdir/tmpdelta"))[7];
-				if (! defined $bestsize || $size < $bestsize) {
-					$bestvariant = $variant;
-					$bestsize=$size;
-					rename("$tempdir/tmpdelta", "$tempdir/bestdelta") || die "rename: $!";
-				}
+	}
+
+	# Nothing worked perfectly, generate deltas keeping the best variant
+	foreach my $variant (@try) {
+		doit_redir($tmpin, $tempout, 'zgz', @$variant, @extraargs, '-c');
+
+		# generate a binary delta and see if this is the best so far
+		my $ret=system("xdelta delta -0 --pristine $tempout $orig $tempdir/tmpdelta 2>/dev/null") >> 8;
+		# xdelta exits 1 on success
+		if ($ret == 1) {
+			my $size=(stat("$tempdir/tmpdelta"))[7];
+			if (! defined $bestsize || $size < $bestsize) {
+				$bestvariant = $variant;
+				$bestsize=$size;
+				rename("$tempdir/tmpdelta", "$tempdir/bestdelta") || die "rename: $!";
 			}
 		}
 	}
 
-	# Nothing worked perfectly, so use the delta that was generated for
-	# the best variant
+	die "No usable xdelta" unless (defined $bestsize);
+
+	# use the delta that was generated for the best variant
 	my $percentover=100 - int (($origsize-$bestsize)/$origsize*100);
 	debug("Using delta to best variant, bloating $percentover%: @$bestvariant");
 	if ($percentover > 10) {
