@@ -16,18 +16,32 @@ B<pristine-comp> [-vdk]  unflatten < I<file.flat> > I<file.(gz|bz2)>
 
 =head1 DESCRIPTION
 
-This is a complement to the pristine-tar(1) command. Normally you don't
-need to run it by hand, since pristine-tar calls it as necessary to handle
-.tar.gz and .tar.bz2 files.
+pristine-comp is an auxiliary command for handling compressed files.
+It is invoked by pristine-tar(1) to handle .tar.gz and .tar.bz2 archives.
 
-pristine-comp gendelta takes the specified compressed file (gz or bz2), and
+Git can use pristine-comp as a filter for compressed files. This is enabled
+through gitattributes(5), as described in the GIT INTEGRATION section.
+
+pristine-comp B<gendelta> takes the specified compressed file (gz or bz2), and
 generates a small binary I<delta> file that can later be used by pristine-comp
 gencomp to recreate the original file.
 
-pristine-comp gencomp takes the specified I<delta> file, and compresses
+pristine-comp B<gencomp> takes the specified I<delta> file, and compresses
 the specified input I<file> (which must be identical to the contents
 of the original compressed file). The resulting file will be identical to
 the original compressed file used to create the delta.
+
+pristine-comp B<flatten> transforms a compressed file on standard input
+into its flat equivalent on standard output.
+
+pristine-comp B<unflatten> reverses a flatten operation. It takes the
+output of pristine-comp flatten on standard input and compresses it
+to standard output. The output data is identical to the original
+flatten input.
+
+If the delta filename is "-", pristine-comp reads or writes it to stdio.
+
+=head1 HOW IT WORKS
 
 The approach used to regenerate an original gz file is to figure out how
 it was produced -- what compression level was used, whether it was built
@@ -45,18 +59,38 @@ the worst case, the diff will include the entire content of the original
 gz file, resulting in a larger than usual delta. If the delta is much
 larger than usual, pristine-comp will print a warning.
 
-The approach used to regenerate an original bz2 file is to figure out
+Likewise, to regenerate an original bz2 file pristine-comp figures out
 how it was produced -- what compression level was used, whether it was
-built with bzip2(1) or with pbzip2(1).
-
-Note that other tools exist, like bzip2smp or dbzip2, but they are
-said to be bit-identical with bzip2. Anyway, bzip2 looks like the most
-widespread implementation, so it's hard to find bzip2 files that make
-pristine-comp fail. Please report!
+built with bzip2(1) or with pbzip2(1). Other tools exist, like bzip2smp
+or dbzip2, but they are said to be bit-identical with bzip2. bzip2 being
+the most widespread implementation, it's hard to find bzip2 files that
+make pristine-comp fail. Please report any!
 
 The deprecated bzip1 compression method hasn't been implemented.
 
-If the delta filename is "-", pristine-comp reads or writes it to stdio.
+=head1 GIT INTEGRATION
+
+pristine-comp can be used to transform compressed files into equivalent,
+uncompressed flat files. The transformation is reversible to restore the
+compressed files with complete accuracy.
+
+Flat files support delta compression, and can be efficiently stored
+in git. When the uncompressed files are diff-friendly, the flat files
+also are.
+
+To have git store compressed files as flat files, run:
+
+	git config --global filter.pristine-comp.clean \
+		'pristine-comp flatten'
+	git config --global filter.pristine-comp.smudge \
+		'pristine-comp unflatten'
+
+Then, in a git repository, add the following entries to gitattributes(5):
+
+	echo '*.gz   filter=pristine-comp' >> .gitattributes
+	echo '*.bz2  filter=pristine-comp' >> .gitattributes
+	echo '*.tgz  filter=pristine-comp' >> .gitattributes
+	echo '*.tbz2 filter=pristine-comp' >> .gitattributes
 
 =head1 OPTIONS
 
@@ -90,14 +124,12 @@ Try harder to determine how to generate deltas of difficult bz2 files.
 
 =item --compression (gz|bz2)
 
-When running gendelta or flatten, generate a delta for the given
-compression type.
+Enforce a given compression format. If the input (compressed file or delta)
+doesn't match the compression format, pristine-comp will exit with an
+error message.
 
-When running gencomp or unflatten, require the output to be
-in the given format.
-
-If not given explicitly, the compression type will be inferred from
-the program name in a backwards-compatible way.
+The pristine-gz and pristine-bz2 aliases implicitly set the compression
+format, and will refuse a contradicting flag.
 
 =back
 
@@ -113,11 +145,11 @@ Specifies a location to place temporary files, other than the default.
 
 =head1 AUTHOR
 
-Joey Hess <joeyh@debian.org>,
-Faidon Liambotis <paravoid@debian.org>
-Cyril Brulebois <cyril.brulebois@enst-bretagne.fr>
-Josh Triplett <josh@joshtriplett.org>
-Gabriel de Perthuis <g2p.code@gmail.com>
+	Joey Hess <joeyh@debian.org>,
+	Faidon Liambotis <paravoid@debian.org>
+	Cyril Brulebois <cyril.brulebois@enst-bretagne.fr>
+	Josh Triplett <josh@joshtriplett.org>
+	Gabriel de Perthuis <g2p.code@gmail.com>
 
 Licensed under the GPL, version 2.
 
