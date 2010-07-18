@@ -865,15 +865,9 @@ sub delta_common {
 
 	my @files = ();
 
-	my ($filename, $timestamp, $xdelta, $program, $params);
 	my %h = reproduce_comp($compfile, $tempdir, "$tempdir/uncompressed");
-	($filename, $timestamp, $xdelta, $program, $params) = (
-		$h{'filename'},
-		$h{'timestamp'},
-		$h{'xdelta'},
-		$h{'program'},
-		$h{'params'},
-		);
+	my ($filename, $timestamp, $xdelta, $program, $params) = @h{
+		'filename', 'timestamp', 'xdelta', 'program', 'params', };
 	my $params_s = join(' ', @$params);
 	my $sha1_b64=sha1_b64_of_file($compfile);
 
@@ -934,15 +928,9 @@ sub flatten {
 
 	doit_redir("/dev/stdin", $compfile, "cat");
 
-	my ($filename, $timestamp, $xdelta, $program, $params);
 	my %h = reproduce_comp($compfile, $tempdir, "$tempdir/uncompressed");
-	($filename, $timestamp, $xdelta, $program, $params) = (
-		$h{'filename'},
-		$h{'timestamp'},
-		$h{'xdelta'},
-		$h{'program'},
-		$h{'params'},
-		);
+	my ($filename, $timestamp, $xdelta, $program, $params) = @h{
+		'filename', 'timestamp', 'xdelta', 'program', 'params', };
 	my $params_s = join(' ', @$params);
 
 	my $filename_urlenc=URI::Escape::uri_escape($filename);
