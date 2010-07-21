@@ -366,22 +366,22 @@ sub test_compression {
 	vprint(@cmd, "<", $tmpin, "|cmp -s -- $orig");
 	open(INFILE, "<", $tmpin) or die(
 		"Could not open '$tmpin' for reading: $!\n");
-	my $cmp_pid = open CMP, "|-", "cmp -s -- $orig" or die(
+	my $compare_pid = open CMP, "|-", "cmp -s -- $orig" or die(
 		"Could not spawn cmp: $!\n");
-	my $bz2_pid = open2(">&CMP", "<&INFILE", @cmd);
+	my $compress_pid = open2(">&CMP", "<&INFILE", @cmd);
 
 	my $dead_pid = wait;
-	if ($dead_pid == $cmp_pid) {
+	if ($dead_pid == $compare_pid) {
 		$cmp_exit_status = WEXITSTATUS($?);
 		#print STDERR "cmp exit status $cmp_exit_status raw $?\n";
 		close CMP;
 		# Don't waste time compressing the rest, would get a SIGPIPE anyway
-		kill 'KILL', $bz2_pid;
+		kill 'KILL', $compress_pid;
 		# Don't leave a zombie
-		waitpid $bz2_pid, 0;
+		waitpid $compress_pid, 0;
 		#print STDERR "$program exit status (raw, after cmp) $?\n";
 	}
-	elsif ($dead_pid == $bz2_pid) {
+	elsif ($dead_pid == $compress_pid) {
 		#print STDERR "$program exit status (raw, before cmp) $?\n";
 		# Implicit waitpid
 		close CMP;
@@ -857,11 +857,10 @@ sub unflatten {
 	doit('cat', "$tempdir/out");
 }
 
-sub delta_common {
+sub gendelta {
 	my $compfile=shift;
 	my $delta=shift;
-	my $tempdir=shift;
-	my $with_uncompressed=shift;
+	my $tempdir=tempdir();
 
 	my @files = ();
 
@@ -897,29 +896,15 @@ sub delta_common {
 		push @files, "delta";
 	}
 
-	my @cmd = ( "tar", "cf", $delta,
+	my @cmd = ( "tar", "czf", $delta,
 	   "-C", $tempdir, "--format=ustar",
 	   "--numeric-owner", "--owner=0", "--group=0", "--mode=0644",
 	   );
-	if ($with_uncompressed) {
-		push @files, "uncompressed";
-	}
-	else {
-		push @cmd, "-z";
-	}
 	foreach my $file (@files) {
 		utime(0, 0, "$tempdir/$file") || die "utime: $file: $!";
 	}
 
 	doit(@cmd, "--", @files);
-}
-
-sub gendelta {
-	my $compfile=shift;
-	my $delta=shift;
-	my $tempdir=tempdir();
-
-	delta_common($compfile, $delta, $tempdir, 0);
 }
 
 sub flatten {
