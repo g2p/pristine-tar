@@ -229,7 +229,7 @@ sub usage {
 	print STDERR "       pristine-comp [-vdk]  gencomp delta file\n";
 	print STDERR "       pristine-comp [-vdkt] flatten\n";
 	print STDERR "       pristine-comp [-vdk]  unflatten\n";
-	print STDERR "Compatiblity:\n";
+	print STDERR "Compatibility:\n";
 	print STDERR "       pristine-comp [-vdk]  genbz2 delta file\n";
 	print STDERR "       pristine-comp [-vdk]  gengz delta file\n";
 }
@@ -252,6 +252,9 @@ sub doit {
 sub doit_redir_opts {
 	no warnings 'once';
 	my ($in, $out, $opts, @args) = @_;
+	# Opts can contain ok_status, a list of exit status that indicate
+	# a successful command. The default is to treat 0 as success.
+
 	vprint(@args, "<", $in, ">", $out);
 	open INFILE, "<", $in or die("Could not open '$in' for reading: $!\n");
 	open OUTFILE, ">", $out or die("Could not open '$out' for reading: $!\n");
@@ -357,9 +360,13 @@ sub bz2_pipe_command {
 }
 
 sub test_compression {
+	# Run two subprocesses: a compressor and a checker.
+	# When the checker sees a mismatch, it kills the compressor.
+
 	no warnings 'once';
 
 	my ($orig, $tmpin, $program, @args) = @_;
+
 	my @cmd = ($program, @args);
 	my $cmp_exit_status;
 
@@ -373,20 +380,20 @@ sub test_compression {
 	my $dead_pid = wait;
 	if ($dead_pid == $compare_pid) {
 		$cmp_exit_status = WEXITSTATUS($?);
-		#print STDERR "cmp exit status $cmp_exit_status raw $?\n";
+		#debug "cmp exit status $cmp_exit_status raw $?";
 		close CMP;
 		# Don't waste time compressing the rest, would get a SIGPIPE anyway
 		kill 'KILL', $compress_pid;
 		# Don't leave a zombie
 		waitpid $compress_pid, 0;
-		#print STDERR "$program exit status (raw, after cmp) $?\n";
+		#debug "$program exit status (raw, after cmp) $?";
 	}
 	elsif ($dead_pid == $compress_pid) {
-		#print STDERR "$program exit status (raw, before cmp) $?\n";
+		#debug "$program exit status (raw, before cmp) $?";
 		# Implicit waitpid
 		close CMP;
 		$cmp_exit_status = WEXITSTATUS($?);
-		#print STDERR "cmp exit status $cmp_exit_status raw $?\n";
+		#debug "cmp exit status $cmp_exit_status raw $?";
 	}
 	elsif ($dead_pid < 0) {
 		die("Error waiting for child processes: $!");
@@ -427,8 +434,7 @@ sub reproducebzip2 {
 	#test_bz2_variant($orig, $tmpin, "7z", "-mx$level") \
 	# && return "7z", "-mx$level";
 
-	# pbzip2 -b option affects output, but cannot be detected from a
-	# header.
+	# pbzip2 -b option affects output, but cannot be detected from a header.
 	if ($try) {
 		my @args = predictbzip2args($level, "pbzip2");
 		print STDERR "pristine-comp will have to try especially hard to reproduce $orig\n";
@@ -780,7 +786,7 @@ sub unflatten {
 	my $tempdir=tempdir();
 	my ($xdelta, $uncompressed, @zgz);
 
-	#MIME::Tools->debugging(1);
+	#MIME::Tools->debugging(1) if $debug;
 	my $parser = new MIME::Parser;
 	$parser->output_under($tempdir);
 	$parser->output_prefix("parts");
@@ -788,7 +794,7 @@ sub unflatten {
 	#$parser->ignore_errors(0);
 
 	my $entity = $parser->parse(\*STDIN) or die "parse failed\n";
-	#$entity->dump_skeleton(\*STDERR) if $verbose;
+	#$entity->dump_skeleton(\*STDERR) if $debug;
 
 	if (not $entity->head->count('Flat-Recode-Version')) {
 		die "Invalid format; did not find Flat-Recode-Version header";
